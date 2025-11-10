@@ -1,0 +1,9 @@
+{
+    "python.defaultInterpreterPath": "C:\\Users\\Thomas\\anaconda3\\envs\\lung_dl_env\\python.exe",
+    "python.terminal.activateEnvironment": true,
+    "jupyter.jupyterServerType": "local",
+    "notebook.defaultFormatter": "ms-python.black-formatter",
+    "jupyter.askForKernelRestart": false,
+    "jupyter.interactiveWindow.creationMode": "perFile"
+}
+

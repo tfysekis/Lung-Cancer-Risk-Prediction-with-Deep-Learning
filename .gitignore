@@ -1,0 +1,5 @@
+pdfs/
+*.md
+reports/
+create_presentation.py
+*pdf

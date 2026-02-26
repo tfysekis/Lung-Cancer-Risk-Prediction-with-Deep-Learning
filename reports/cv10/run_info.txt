@@ -1,0 +1,9 @@
+Lung Cancer Risk Prediction - Report folder
+==================================================
+
+Run type: 10-fold stratified CV
+
+Command: python src/compare_models.py --cv 10
+
+Reference (Dritsas & Trigka 2022): 97.1% accuracy, 99.3% AUC
+Use this folder for presentation slides (single run vs 5-fold vs 10-fold).

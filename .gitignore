@@ -1,5 +1,5 @@
-#pdfs/
-#*.md
-#reports/
-#create_presentation.py
-#*pdf
+pdfs/
+reports/
+create_presentation.py
+*.pdf
+Thesis.docx

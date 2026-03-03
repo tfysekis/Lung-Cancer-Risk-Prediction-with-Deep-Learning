@@ -21,7 +21,7 @@ Lung-Cancer-Risk-Prediction-with-Deep-Learning/
 
 1. Create a virtual environment (recommended):
 ```bash
-conda create -n lung_dl_env python=3.9
+conda create -n lung_dl_env python=3.12
 conda activate lung_dl_env
 ```
 
@@ -58,18 +58,3 @@ The deep neural network (`LungCancerNet`) consists of:
 ## Results
 
 The model achieves competitive performance compared to traditional machine learning approaches. Detailed results are available in the notebook and generated reports.
-
-## Notes
-
-- The dataset contains 309 samples with 15 features
-- Class imbalance exists (more positive cases than negative)
-- Stratified train/test split ensures balanced distribution
-- Model uses early stopping and learning rate scheduling
-
-## Future Improvements
-
-- Experiment with different architectures
-- Implement cross-validation
-- Add feature importance analysis
-- Try ensemble methods
-- Handle class imbalance with weighted loss or SMOTE

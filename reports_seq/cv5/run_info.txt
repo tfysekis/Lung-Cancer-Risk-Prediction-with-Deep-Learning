@@ -1,0 +1,8 @@
+Lung Cancer Risk Prediction - Sequence Models
+==================================================
+
+Run type: 5-fold stratified CV (SMOTE-balanced dataset)
+
+Command: python src/compare_models_seq.py --cv 5
+
+Models: RNN, GRU, LSTM (sequence over 15 features).

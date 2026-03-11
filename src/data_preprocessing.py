@@ -7,6 +7,7 @@ import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
+from imblearn.over_sampling import SMOTE
 import torch
 from torch.utils.data import Dataset, DataLoader
 
@@ -47,6 +48,49 @@ def load_data(data_path):
     df['LUNG_CANCER'] = df['LUNG_CANCER'].map({'YES': 1, 'NO': 0})
     
     return df
+
+
+def load_data_smote(data_path, save_path=None, random_state=42):
+    """
+    Load the original dataset and apply SMOTE once at dataset level,
+    following the reference paper (309 -> 540 balanced instances).
+
+    Args:
+        data_path: Path to the original CSV file.
+        save_path: Optional path to save the SMOTE-balanced CSV.
+        random_state: Random seed for SMOTE.
+
+    Returns:
+        DataFrame: SMOTE-balanced dataframe.
+    """
+    df = load_data(data_path)
+    X = df.drop("LUNG_CANCER", axis=1).values
+    y = df["LUNG_CANCER"].values
+
+    from collections import Counter
+    orig_counts = Counter(y)
+    print("Original dataset class distribution (before SMOTE):")
+    total_orig = sum(orig_counts.values())
+    for cls, cnt in orig_counts.items():
+        print(f"  Class {cls}: {cnt} samples ({cnt/total_orig*100:.1f}%)")
+
+    smote = SMOTE(random_state=random_state)
+    X_res, y_res = smote.fit_resample(X, y)
+
+    balanced_df = pd.DataFrame(X_res, columns=df.drop("LUNG_CANCER", axis=1).columns)
+    balanced_df["LUNG_CANCER"] = y_res
+
+    bal_counts = Counter(y_res)
+    print("SMOTE-balanced dataset class distribution:")
+    total_bal = sum(bal_counts.values())
+    for cls, cnt in bal_counts.items():
+        print(f"  Class {cls}: {cnt} samples ({cnt/total_bal*100:.1f}%)")
+
+    if save_path is not None:
+        balanced_df.to_csv(save_path, index=False)
+        print(f"SMOTE-balanced dataset saved to: {save_path}")
+
+    return balanced_df
 
 
 def get_X_y(df):

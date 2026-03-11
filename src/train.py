@@ -254,7 +254,9 @@ DEFAULT_EARLY_STOPPING_PATIENCE = 15
 
 if __name__ == "__main__":
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    DATA_PATH = os.path.join(project_root, "data", "raw", "survey lung cancer.csv")
+    DATA_PATH = os.path.join(project_root, "data", "survey lung cancer.csv")
+    if not os.path.isfile(DATA_PATH):
+        DATA_PATH = os.path.join(project_root, "data", "raw", "survey lung cancer.csv")
     MODEL_SAVE_PATH = os.path.join(project_root, "models", "lung_cancer_model.pth")
     PLOT_SAVE_PATH = os.path.join(project_root, "reports", "training_history.png")
     NUM_EPOCHS = DEFAULT_EPOCHS

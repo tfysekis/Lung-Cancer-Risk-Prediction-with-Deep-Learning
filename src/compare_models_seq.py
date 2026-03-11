@@ -1,8 +1,20 @@
 """
-Compare 7 deep learning architectures for lung cancer risk prediction.
-Trains each model, saves to models/, and generates visuals + CSV in reports/.
-Reference: Dritsas & Trigka (2022) reported 97.1% accuracy, 99.3% AUC with Rotation Forest (ML).
+Compare sequence-based models (RNN / GRU / LSTM) for lung cancer risk prediction.
+
+This script:
+- Loads the original survey dataset.
+- Applies SMOTE once to create a balanced dataset (like the reference article).
+- Runs an 80/20 split or stratified k-fold CV on the balanced data.
+- Trains RNN / GRU / LSTM classifiers and saves metrics and plots in separate report folders.
+
+Run from project root:
+  python src/compare_models_seq.py
+  python src/compare_models_seq.py --cv 10
 """
+
+import os
+import sys
+import argparse
 
 import torch
 import pandas as pd
@@ -14,40 +26,25 @@ from sklearn.metrics import (
     roc_curve, auc, precision_recall_curve, average_precision_score,
     confusion_matrix
 )
-import os
-import sys
-import argparse
 from sklearn.model_selection import StratifiedKFold
 
-# Imports
+
 try:
-    from model import (
-        LungCancerNet, LungCancerNetSimple, LungCancerNetMinimal,
-        LungCancerNetDeep, LungCancerNetELU, LungCancerNetLayerNorm,
-        LungCancerNetResidual
-    )
-    from data_preprocessing import load_data, prepare_data, prepare_fold, get_X_y, create_dataloaders
+    from model_seq import LungCancerRNN, LungCancerGRU, LungCancerLSTM
+    from data_preprocessing import load_data_smote, prepare_data, prepare_fold, get_X_y, create_dataloaders
     from train import train_model
 except ImportError:
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    from src.model import (
-        LungCancerNet, LungCancerNetSimple, LungCancerNetMinimal,
-        LungCancerNetDeep, LungCancerNetELU, LungCancerNetLayerNorm,
-        LungCancerNetResidual
-    )
-    from src.data_preprocessing import load_data, prepare_data, prepare_fold, get_X_y, create_dataloaders
+    from src.model_seq import LungCancerRNN, LungCancerGRU, LungCancerLSTM
+    from src.data_preprocessing import load_data_smote, prepare_data, prepare_fold, get_X_y, create_dataloaders
     from src.train import train_model
 
-# ---------- Hyperparameters (thesis defaults) ----------
+
 NUM_EPOCHS = 100
 BATCH_SIZE = 32
 LEARNING_RATE = 0.001
 EARLY_STOPPING_PATIENCE = 15
 RANDOM_SEED = 42
-
-# Reference: Dritsas & Trigka (2022) - Rotation Forest on same dataset
-REFERENCE_ACCURACY = 0.971   # 97.1%
-REFERENCE_AUC = 0.993        # 99.3%
 
 
 def count_parameters(model):
@@ -144,17 +141,13 @@ def save_model_visualizations(model_name, model, test_loader, result, report_dir
 
 
 def create_comparison_plots(results_df, report_dir):
-    """Accuracy bar chart, complexity vs accuracy, and 4-metric comparison."""
-    # 1. Accuracy comparison
+    """Accuracy bar chart and 4-metric comparison for sequence models."""
     plt.figure(figsize=(10, 6))
     bars = plt.barh(results_df['Model'], results_df['Test Accuracy'],
                     color=plt.cm.viridis(np.linspace(0, 1, len(results_df))))
-    plt.axvline(REFERENCE_ACCURACY, color='red', linestyle='--', linewidth=2,
-                label=f'Reference (2022 ML): {REFERENCE_ACCURACY:.1%}')
     plt.xlabel('Test Accuracy')
-    plt.title('Model Comparison: Test Accuracy (red line = 2022 paper baseline)', fontsize=14, fontweight='bold')
+    plt.title('Sequence Models: Test Accuracy', fontsize=14, fontweight='bold')
     plt.xlim([max(0, results_df['Test Accuracy'].min() - 0.05), 1.0])
-    plt.legend()
     plt.grid(axis='x', alpha=0.3)
     for bar, acc in zip(bars, results_df['Test Accuracy']):
         plt.text(acc + 0.01, bar.get_y() + bar.get_height() / 2, f'{acc:.2%}', va='center', fontsize=9)
@@ -162,23 +155,6 @@ def create_comparison_plots(results_df, report_dir):
     plt.savefig(os.path.join(report_dir, 'accuracy_comparison.png'), dpi=300, bbox_inches='tight')
     plt.close()
 
-    # 2. Parameters vs Accuracy
-    plt.figure(figsize=(10, 6))
-    plt.scatter(results_df['Parameters'], results_df['Test Accuracy'], s=150, alpha=0.7)
-    for _, row in results_df.iterrows():
-        plt.annotate(row['Model'], (row['Parameters'], row['Test Accuracy']),
-                     xytext=(5, 5), textcoords='offset points', fontsize=9)
-    plt.axhline(REFERENCE_ACCURACY, color='red', linestyle='--', alpha=0.7, label='2022 baseline')
-    plt.xlabel('Number of Parameters')
-    plt.ylabel('Test Accuracy')
-    plt.title('Complexity vs Performance', fontsize=14, fontweight='bold')
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.savefig(os.path.join(report_dir, 'complexity_vs_performance.png'), dpi=300, bbox_inches='tight')
-    plt.close()
-
-    # 3. Four metrics
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
     for idx, metric in enumerate(['Test Accuracy', 'Precision', 'Recall', 'F1-Score']):
         ax = axes[idx // 2, idx % 2]
@@ -193,22 +169,18 @@ def create_comparison_plots(results_df, report_dir):
 
 
 def create_cv_comparison_plots(results_df, report_dir, n_splits):
-    """Comparison plots for CV results: mean +/- std, reference line."""
+    """Comparison plots for CV results: mean +/- std."""
     acc_mean = results_df['Test Accuracy (mean)']
     acc_std = results_df['Test Accuracy (std)']
     auc_mean = results_df['ROC-AUC (mean)']
     auc_std = results_df['ROC-AUC (std)']
 
-    # 1. Accuracy comparison (with error bars)
     plt.figure(figsize=(10, 6))
     bars = plt.barh(results_df['Model'], acc_mean, xerr=acc_std, capsize=4,
                     color=plt.cm.viridis(np.linspace(0, 1, len(results_df))))
-    plt.axvline(REFERENCE_ACCURACY, color='red', linestyle='--', linewidth=2,
-                label=f'Reference (2022 ML): {REFERENCE_ACCURACY:.1%}')
     plt.xlabel('Test Accuracy (mean +/- std)')
-    plt.title(f'Model Comparison ({n_splits}-fold CV): Test Accuracy', fontsize=14, fontweight='bold')
+    plt.title(f'Sequence Models ({n_splits}-fold CV): Test Accuracy', fontsize=14, fontweight='bold')
     plt.xlim([max(0, (acc_mean - acc_std).min() - 0.05), 1.0])
-    plt.legend()
     plt.grid(axis='x', alpha=0.3)
     for i, (bar, m, s) in enumerate(zip(bars, acc_mean, acc_std)):
         plt.text(m + s + 0.02, bar.get_y() + bar.get_height() / 2, f'{m:.2%}', va='center', fontsize=9)
@@ -216,32 +188,13 @@ def create_cv_comparison_plots(results_df, report_dir, n_splits):
     plt.savefig(os.path.join(report_dir, 'accuracy_comparison.png'), dpi=300, bbox_inches='tight')
     plt.close()
 
-    # 2. Parameters vs Accuracy
-    plt.figure(figsize=(10, 6))
-    plt.errorbar(results_df['Parameters'], acc_mean, yerr=acc_std, fmt='o', capsize=5, markersize=10)
-    for _, row in results_df.iterrows():
-        plt.annotate(row['Model'], (row['Parameters'], row['Test Accuracy (mean)']),
-                     xytext=(5, 5), textcoords='offset points', fontsize=9)
-    plt.axhline(REFERENCE_ACCURACY, color='red', linestyle='--', alpha=0.7, label='2022 baseline')
-    plt.xlabel('Number of Parameters')
-    plt.ylabel('Test Accuracy (mean +/- std)')
-    plt.title(f'Complexity vs Performance ({n_splits}-fold CV)', fontsize=14, fontweight='bold')
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.savefig(os.path.join(report_dir, 'complexity_vs_performance.png'), dpi=300, bbox_inches='tight')
-    plt.close()
-
-    # 3. Two-panel: Accuracy and ROC-AUC (mean +/- std)
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
     ax1.barh(results_df['Model'], acc_mean, xerr=acc_std, capsize=3, color=plt.cm.Set3(np.linspace(0, 1, len(results_df))))
-    ax1.axvline(REFERENCE_ACCURACY, color='red', linestyle='--', alpha=0.8)
     ax1.set_xlabel('Test Accuracy')
     ax1.set_title(f'Test Accuracy ({n_splits}-fold CV)')
     ax1.set_xlim([0, 1.0])
     ax1.grid(axis='x', alpha=0.3)
     ax2.barh(results_df['Model'], auc_mean, xerr=auc_std, capsize=3, color=plt.cm.Set3(np.linspace(0, 1, len(results_df))))
-    ax2.axvline(REFERENCE_AUC, color='red', linestyle='--', alpha=0.8)
     ax2.set_xlabel('ROC-AUC')
     ax2.set_title(f'ROC-AUC ({n_splits}-fold CV)')
     ax2.set_xlim([0, 1.05])
@@ -252,43 +205,56 @@ def create_cv_comparison_plots(results_df, report_dir, n_splits):
 
 
 def write_run_info(report_dir, run_type, command_hint):
-    """Write a short README in the report folder so you know what run produced it."""
     path = os.path.join(report_dir, 'run_info.txt')
     with open(path, 'w') as f:
-        f.write(f"Lung Cancer Risk Prediction - Report folder\n")
+        f.write("Lung Cancer Risk Prediction - Sequence Models\n")
         f.write(f"{'=' * 50}\n\n")
         f.write(f"Run type: {run_type}\n\n")
         f.write(f"Command: {command_hint}\n\n")
-        f.write(f"Reference (Dritsas & Trigka 2022): 97.1% accuracy, 99.3% AUC\n")
-        f.write(f"Use this folder for presentation slides (single run vs 5-fold vs 10-fold).\n")
+        f.write("Models: RNN, GRU, LSTM (sequence over 15 features).\n")
 
 
-def compare_all_models(
+def _get_roc_auc(model, test_loader, device):
+    model.eval()
+    model = model.to(device)
+    y_true, y_proba = [], []
+    with torch.no_grad():
+        for features, labels in test_loader:
+            features = features.to(device)
+            outputs = model(features)
+            probs = torch.softmax(outputs, dim=1)[:, 1]
+            y_true.extend(labels.cpu().numpy())
+            y_proba.extend(probs.cpu().numpy())
+    fpr, tpr, _ = roc_curve(y_true, y_proba)
+    return auc(fpr, tpr)
+
+
+def compare_sequence_models(
     data_path,
     num_epochs=NUM_EPOCHS,
     batch_size=BATCH_SIZE,
     learning_rate=LEARNING_RATE,
     device='cpu',
-    save_dir='../models',
-    report_dir='../reports',
+    save_dir='../models_seq',
+    report_dir='../reports_seq/single_split',
     early_stopping_patience=EARLY_STOPPING_PATIENCE,
 ):
-    """Train and compare the 7 thesis models. Returns DataFrame of results."""
     print("=" * 70)
-    print("LUNG CANCER RISK PREDICTION - DEEP LEARNING MODEL COMPARISON")
+    print("LUNG CANCER RISK PREDICTION - SEQUENCE MODEL COMPARISON (80/20 on SMOTE data)")
     print("=" * 70)
-    print(f"Reference (Dritsas & Trigka 2022, Rotation Forest): "
-          f"Accuracy {REFERENCE_ACCURACY:.1%}, AUC {REFERENCE_AUC:.1%}")
     print(f"Settings: lr={learning_rate}, batch_size={batch_size}, epochs={num_epochs}, "
           f"early_stop={early_stopping_patience}")
     print("=" * 70)
 
     os.makedirs(save_dir, exist_ok=True)
     os.makedirs(report_dir, exist_ok=True)
-    write_run_info(report_dir, "Single 80/20 split (no CV)", "python src/compare_models.py")
+    write_run_info(report_dir, "Single 80/20 split (SMOTE-balanced dataset)", "python src/compare_models_seq.py")
 
-    print("\n[1/4] Loading data...")
-    df = load_data(data_path)
+    print("\n[1/4] Loading SMOTE-balanced data...")
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    smote_save_path = os.path.join(project_root, "data", "processed", "survey_lung_cancer_smote_seq.csv")
+    os.makedirs(os.path.dirname(smote_save_path), exist_ok=True)
+    df = load_data_smote(data_path, save_path=smote_save_path)
     X_train, X_test, y_train, y_test, scaler, class_weights = prepare_data(df, normalize=True)
     train_loader, test_loader = create_dataloaders(
         X_train, X_test, y_train, y_test, batch_size=batch_size
@@ -296,26 +262,17 @@ def compare_all_models(
     input_size = X_train.shape[1]
     print(f"   Train: {len(y_train)}, Test: {len(y_test)}, Features: {input_size}")
 
-    # 7 models for thesis
     models_config = [
-        {'name': 'Standard (128-64-32)', 'model': LungCancerNet(input_size=input_size, hidden_sizes=[128, 64, 32], dropout_rate=0.3),
-         'description': 'Standard 3-layer MLP'},
-        {'name': 'Simple (64-32)', 'model': LungCancerNetSimple(input_size=input_size, hidden_size=64, dropout_rate=0.2),
-         'description': 'Simple 2-layer'},
-        {'name': 'Minimal (32)', 'model': LungCancerNetMinimal(input_size=input_size, hidden_size=32, dropout_rate=0.2),
-         'description': 'Minimal 1-layer'},
-        {'name': 'Deep (5 layers)', 'model': LungCancerNetDeep(input_size=input_size, hidden_size=64, num_layers=5, dropout_rate=0.3),
-         'description': 'Deep 5-layer MLP'},
-        {'name': 'ELU Activation', 'model': LungCancerNetELU(input_size=input_size, hidden_sizes=[128, 64, 32], dropout_rate=0.3),
-         'description': 'Standard with ELU'},
-        {'name': 'LayerNorm', 'model': LungCancerNetLayerNorm(input_size=input_size, hidden_sizes=[128, 64, 32], dropout_rate=0.3),
-         'description': 'Layer Normalization'},
-        {'name': 'Residual', 'model': LungCancerNetResidual(input_size=input_size, hidden_size=128, dropout_rate=0.3),
-         'description': 'Residual connections'},
+        {'name': 'RNN (hidden=64)', 'model': LungCancerRNN(input_size=input_size, hidden_size=64, num_layers=1, dropout=0.0),
+         'description': 'Basic RNN'},
+        {'name': 'GRU (hidden=64)', 'model': LungCancerGRU(input_size=input_size, hidden_size=64, num_layers=1, dropout=0.0),
+         'description': 'GRU'},
+        {'name': 'LSTM (hidden=64)', 'model': LungCancerLSTM(input_size=input_size, hidden_size=64, num_layers=1, dropout=0.0),
+         'description': 'LSTM'},
     ]
 
     results = []
-    print(f"\n[2/4] Training {len(models_config)} models...")
+    print(f"\n[2/4] Training {len(models_config)} sequence models...")
     for i, config in enumerate(models_config, 1):
         model_name = config['name']
         model = config['model']
@@ -368,73 +325,52 @@ def compare_all_models(
     print(f"   Plots in {report_dir}")
 
     print("\n" + "=" * 70)
-    print("COMPARISON COMPLETE")
+    print("SEQUENCE MODEL COMPARISON COMPLETE")
     print("=" * 70)
     print(results_df[['Model', 'Test Accuracy', 'F1-Score', 'ROC-AUC', 'Parameters']].to_string(index=False))
     return results_df
 
 
-def _get_roc_auc(model, test_loader, device):
-    """Compute ROC-AUC for a trained model on test_loader."""
-    model.eval()
-    model = model.to(device)
-    y_true, y_proba = [], []
-    with torch.no_grad():
-        for features, labels in test_loader:
-            features = features.to(device)
-            outputs = model(features)
-            probs = torch.softmax(outputs, dim=1)[:, 1]
-            y_true.extend(labels.cpu().numpy())
-            y_proba.extend(probs.cpu().numpy())
-    fpr, tpr, _ = roc_curve(y_true, y_proba)
-    return auc(fpr, tpr)
-
-
-def compare_all_models_cv(
+def compare_sequence_models_cv(
     data_path,
     n_splits=5,
     num_epochs=NUM_EPOCHS,
     batch_size=BATCH_SIZE,
     learning_rate=LEARNING_RATE,
     device='cpu',
-    report_dir='../reports',
+    report_dir='../reports_seq',
     early_stopping_patience=EARLY_STOPPING_PATIENCE,
 ):
-    """
-    Train each of the 7 models with stratified k-fold CV and report mean ± std.
-    More comparable to the 2022 paper (they likely used CV). No models saved.
-    """
     print("=" * 70)
-    print("LUNG CANCER RISK PREDICTION - CROSS-VALIDATION COMPARISON")
+    print("LUNG CANCER RISK PREDICTION - SEQUENCE MODELS CROSS-VALIDATION (SMOTE-balanced data)")
     print("=" * 70)
-    print(f"Reference (Dritsas & Trigka 2022): Accuracy {REFERENCE_ACCURACY:.1%}, AUC {REFERENCE_AUC:.1%}")
     print(f"Settings: {n_splits}-fold stratified CV, lr={learning_rate}, batch_size={batch_size}, "
           f"epochs={num_epochs}, early_stop={early_stopping_patience}")
     print("=" * 70)
 
     os.makedirs(report_dir, exist_ok=True)
-    write_run_info(report_dir, f"{n_splits}-fold stratified CV",
-                   f"python src/compare_models.py --cv {n_splits}")
-    df = load_data(data_path)
+    write_run_info(report_dir, f"{n_splits}-fold stratified CV (SMOTE-balanced dataset)",
+                   f"python src/compare_models_seq.py --cv {n_splits}")
+
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    smote_save_path = os.path.join(project_root, "data", "processed", f"survey_lung_cancer_smote_seq_cv{n_splits}.csv")
+    os.makedirs(os.path.dirname(smote_save_path), exist_ok=True)
+    df = load_data_smote(data_path, save_path=smote_save_path)
     X, y = get_X_y(df)
     input_size = X.shape[1]
     skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=RANDOM_SEED)
 
     models_config = [
-        {'name': 'Standard (128-64-32)', 'model_factory': lambda: LungCancerNet(input_size=input_size, hidden_sizes=[128, 64, 32], dropout_rate=0.3)},
-        {'name': 'Simple (64-32)', 'model_factory': lambda: LungCancerNetSimple(input_size=input_size, hidden_size=64, dropout_rate=0.2)},
-        {'name': 'Minimal (32)', 'model_factory': lambda: LungCancerNetMinimal(input_size=input_size, hidden_size=32, dropout_rate=0.2)},
-        {'name': 'Deep (5 layers)', 'model_factory': lambda: LungCancerNetDeep(input_size=input_size, hidden_size=64, num_layers=5, dropout_rate=0.3)},
-        {'name': 'ELU Activation', 'model_factory': lambda: LungCancerNetELU(input_size=input_size, hidden_sizes=[128, 64, 32], dropout_rate=0.3)},
-        {'name': 'LayerNorm', 'model_factory': lambda: LungCancerNetLayerNorm(input_size=input_size, hidden_sizes=[128, 64, 32], dropout_rate=0.3)},
-        {'name': 'Residual', 'model_factory': lambda: LungCancerNetResidual(input_size=input_size, hidden_size=128, dropout_rate=0.3)},
+        {'name': 'RNN (hidden=64)', 'model_factory': lambda: LungCancerRNN(input_size=input_size, hidden_size=64, num_layers=1, dropout=0.0)},
+        {'name': 'GRU (hidden=64)', 'model_factory': lambda: LungCancerGRU(input_size=input_size, hidden_size=64, num_layers=1, dropout=0.0)},
+        {'name': 'LSTM (hidden=64)', 'model_factory': lambda: LungCancerLSTM(input_size=input_size, hidden_size=64, num_layers=1, dropout=0.0)},
     ]
 
     results = []
     for i, config in enumerate(models_config, 1):
         model_name = config['name']
         accs, aucs = [], []
-        print(f"\n[{i}/7] {model_name} — {n_splits}-fold CV...")
+        print(f"\n[{i}/{len(models_config)}] {model_name} — {n_splits}-fold CV...")
         for fold, (train_idx, test_idx) in enumerate(skf.split(X, y)):
             X_train, X_test, y_train, y_test, class_weights = prepare_fold(X, y, train_idx, test_idx, normalize=True)
             train_loader, test_loader = create_dataloaders(X_train, X_test, y_train, y_test, batch_size=batch_size)
@@ -467,43 +403,37 @@ def compare_all_models_cv(
         print(f"   Accuracy: {mean_acc:.2%} +/- {std_acc:.2%}  |  ROC-AUC: {mean_auc:.4f} +/- {std_auc:.4f}")
 
     results_df = pd.DataFrame(results).sort_values('Test Accuracy (mean)', ascending=False)
-    results_path = os.path.join(report_dir, 'model_comparison_results.csv')
+    results_path = os.path.join(report_dir, 'model_comparison_results_seq_cv.csv')
     results_df.to_csv(results_path, index=False)
     print(f"\nCV results saved to {results_path}")
 
     create_cv_comparison_plots(results_df, report_dir, n_splits)
     print(f"   Comparison plots saved in {report_dir}")
 
-    # Summary vs reference
     print("\n" + "=" * 70)
-    print("CV SUMMARY vs REFERENCE (2022)")
+    print("SEQUENCE CV SUMMARY")
     print("=" * 70)
     print(results_df[['Model', 'Test Accuracy (mean)', 'Test Accuracy (std)', 'ROC-AUC (mean)', 'ROC-AUC (std)', 'Parameters']].to_string(index=False))
-    best_acc = results_df['Test Accuracy (mean)'].max()
-    best_auc = results_df['ROC-AUC (mean)'].max()
-    print(f"\nBest CV Accuracy: {best_acc:.2%}  (reference 2022: {REFERENCE_ACCURACY:.1%})")
-    print(f"Best CV AUC:      {best_auc:.4f}  (reference: {REFERENCE_AUC:.3f})")
     return results_df
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Compare DL models for lung cancer risk prediction.")
+    parser = argparse.ArgumentParser(description="Compare sequence models (RNN/GRU/LSTM) for lung cancer risk prediction.")
     parser.add_argument("--cv", type=int, default=None, metavar="K",
                         help="Run K-fold stratified CV and report mean±std (e.g. --cv 5). No --cv = single 80/20 split.")
-    parser.add_argument("--folds", type=int, default=5, help="Number of folds when using --cv (default: 5).")
     args = parser.parse_args()
 
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     DATA_PATH = os.path.join(project_root, "data", "survey lung cancer.csv")
     if not os.path.isfile(DATA_PATH):
         DATA_PATH = os.path.join(project_root, "data", "raw", "survey lung cancer.csv")
-    SAVE_DIR = os.path.join(project_root, "models")
+    SAVE_DIR = os.path.join(project_root, "models_seq")
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     if args.cv is not None:
         n_splits = max(2, args.cv)
-        report_dir = os.path.join(project_root, "reports", f"cv{n_splits}")
-        compare_all_models_cv(
+        report_dir = os.path.join(project_root, "reports_seq", f"cv{n_splits}")
+        compare_sequence_models_cv(
             data_path=DATA_PATH,
             n_splits=n_splits,
             num_epochs=NUM_EPOCHS,
@@ -514,8 +444,8 @@ if __name__ == "__main__":
             early_stopping_patience=EARLY_STOPPING_PATIENCE,
         )
     else:
-        report_dir = os.path.join(project_root, "reports", "single_split")
-        compare_all_models(
+        report_dir = os.path.join(project_root, "reports_seq", "single_split")
+        compare_sequence_models(
             data_path=DATA_PATH,
             num_epochs=NUM_EPOCHS,
             batch_size=BATCH_SIZE,
@@ -525,3 +455,4 @@ if __name__ == "__main__":
             report_dir=report_dir,
             early_stopping_patience=EARLY_STOPPING_PATIENCE,
         )
+

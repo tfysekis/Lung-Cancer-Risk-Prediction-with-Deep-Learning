@@ -37,7 +37,7 @@ CV5_SEQ = os.path.join(REPORTS_SEQ, "cv5")
 CV10_SEQ = os.path.join(REPORTS_SEQ, "cv10")
 OUTPUT_PATH = os.path.join(REPORTS_SEQ, "Lung_Cancer_Sequence_Models_Presentation.pptx")
 
-# 9 models: RNN/GRU/LSTM × hidden 32, 64, 128 — must match compare_models_seq output
+# 18 models: 1-layer + 2-layer (2L) with dropout — must match compare_models_seq output
 MODELS = [
     ("rnn_hidden=32", "RNN (hidden=32)"),
     ("rnn_hidden=64", "RNN (hidden=64)"),
@@ -48,6 +48,15 @@ MODELS = [
     ("lstm_hidden=32", "LSTM (hidden=32)"),
     ("lstm_hidden=64", "LSTM (hidden=64)"),
     ("lstm_hidden=128", "LSTM (hidden=128)"),
+    ("rnn_2l_hidden=32", "RNN 2L (hidden=32)"),
+    ("rnn_2l_hidden=64", "RNN 2L (hidden=64)"),
+    ("rnn_2l_hidden=128", "RNN 2L (hidden=128)"),
+    ("gru_2l_hidden=32", "GRU 2L (hidden=32)"),
+    ("gru_2l_hidden=64", "GRU 2L (hidden=64)"),
+    ("gru_2l_hidden=128", "GRU 2L (hidden=128)"),
+    ("lstm_2l_hidden=32", "LSTM 2L (hidden=32)"),
+    ("lstm_2l_hidden=64", "LSTM 2L (hidden=64)"),
+    ("lstm_2l_hidden=128", "LSTM 2L (hidden=128)"),
 ]
 
 
@@ -56,8 +65,15 @@ def add_title_slide(prs, title, subtitle=""):
     slide = prs.slides.add_slide(layout)
     slide.shapes.title.text = title
     if subtitle and len(slide.placeholders) > 1:
-        slide.placeholders[1].text = subtitle
+        ph = slide.placeholders[1]
+        ph.text = subtitle
+        if ph.text_frame.paragraphs:
+            ph.text_frame.paragraphs[0].font.size = Pt(BODY_FONT_SIZE)
     return slide
+
+
+# Non-title text size (body, captions) — match your manual edit to 20pt
+BODY_FONT_SIZE = 20
 
 
 def add_content_slide(prs, title, bullets):
@@ -70,6 +86,7 @@ def add_content_slide(prs, title, bullets):
         p = body.add_paragraph()
         p.text = b
         p.level = 0
+        p.font.size = Pt(BODY_FONT_SIZE)
     return slide
 
 
@@ -86,7 +103,7 @@ def add_slide_with_image(prs, title, image_path, caption=""):
     if caption:
         tx2 = slide.shapes.add_textbox(Inches(0.5), Inches(6.8), Inches(9), Inches(0.4))
         tx2.text_frame.text = caption
-        tx2.text_frame.paragraphs[0].font.size = Pt(12)
+        tx2.text_frame.paragraphs[0].font.size = Pt(BODY_FONT_SIZE)
     return slide
 
 
@@ -101,11 +118,15 @@ def add_slide_two_images(prs, title, path1, path2, cap1="", cap2=""):
     if os.path.isfile(path1):
         slide.shapes.add_picture(path1, Inches(0.5), y, width=Inches(4.4), height=Inches(3.2))
     if cap1:
-        slide.shapes.add_textbox(Inches(0.5), Inches(4.3), Inches(4.4), Inches(0.35)).text_frame.text = cap1
+        tb = slide.shapes.add_textbox(Inches(0.5), Inches(4.3), Inches(4.4), Inches(0.35))
+        tb.text_frame.text = cap1
+        tb.text_frame.paragraphs[0].font.size = Pt(BODY_FONT_SIZE)
     if os.path.isfile(path2):
         slide.shapes.add_picture(path2, Inches(5.0), y, width=Inches(4.4), height=Inches(3.2))
     if cap2:
-        slide.shapes.add_textbox(Inches(5.0), Inches(4.3), Inches(4.4), Inches(0.35)).text_frame.text = cap2
+        tb = slide.shapes.add_textbox(Inches(5.0), Inches(4.3), Inches(4.4), Inches(0.35))
+        tb.text_frame.text = cap2
+        tb.text_frame.paragraphs[0].font.size = Pt(BODY_FONT_SIZE)
     return slide
 
 
@@ -153,14 +174,18 @@ def add_slide_metrics_table(prs, title, csv_path, columns_to_show=None):
         return slide
     table = slide.shapes.add_table(n_rows, n_cols, Inches(0.5), Inches(0.9), Inches(9), Inches(0.4 * n_rows)).table
     for c, col in enumerate(df.columns):
-        table.cell(0, c).text = str(col)[:20]
+        cell = table.cell(0, c)
+        cell.text = str(col)[:20]
+        cell.text_frame.paragraphs[0].font.size = Pt(BODY_FONT_SIZE)
     for r in range(len(df)):
         for c, col in enumerate(df.columns):
             val = df.iloc[r][col]
+            cell = table.cell(r + 1, c)
             if isinstance(val, float):
-                table.cell(r + 1, c).text = f"{val:.4f}" if abs(val) < 10 else f"{val:.2f}"
+                cell.text = f"{val:.4f}" if abs(val) < 10 else f"{val:.2f}"
             else:
-                table.cell(r + 1, c).text = str(val)[:20]
+                cell.text = str(val)[:20]
+            cell.text_frame.paragraphs[0].font.size = Pt(BODY_FONT_SIZE)
     return slide
 
 
@@ -265,22 +290,20 @@ def main():
         "5. Αξιολόγηση: accuracy, precision, recall, F1, ROC-AUC, PR-AUC· confusion matrices και καμπύλες ROC/PR.",
     ])
 
-    # 5. Μοντέλα — RNN, GRU, LSTM (hidden=32, 64, 128)
-    add_content_slide(prs, "Μοντέλα — RNN, GRU, LSTM (hidden=32, 64, 128)", [
+    # 5. Μοντέλα — 1 στρώμα + 2 στρώματα (και dropout)
+    add_content_slide(prs, "Μοντέλα — RNN, GRU, LSTM (1 και 2 στρώματα, hidden=32, 64, 128)", [
         "Τα 15 χαρακτηριστικά αντιμετωπίζονται ως ακολουθία μήκους 15 (input_dim=1).",
-        "Για κάθε αρχιτεκτονική (RNN, GRU, LSTM) δοκιμάζουμε τρία μεγέθη: hidden=32, 64, 128.",
-        "RNN: 1 στρώμα· παράμετροι ~1.2K (32), ~4.4K (64), ~17K (128).",
-        "GRU: 1 στρώμα· παράμετροι ~3.5K (32), ~13K (64), ~50K (128).",
-        "LSTM: 1 στρώμα· παράμετροι ~4.5K (32), ~17K (64), ~66K (128). Όλα δίνουν 2 logits (NO/YES).",
+        "Μονοστρωματικά (1 layer): RNN, GRU, LSTM με hidden=32, 64, 128.",
+        "Διπλοστρωματικά (2 layers): ίδια πλήθη ανά στρώμα (32, 64, 128) και Dropout 0.2 μεταξύ στρωμάτων.",
+        "Συνολικά 18 μοντέλα: 9× (1 layer) + 9× (2 layers με dropout). Όλα δίνουν 2 logits (NO/YES).",
     ])
 
-    # 6. Ρυθμίσεις εκπαίδευσης — epochs, learning rate, early stop κ.ά.
+    # 6. Ρυθμίσεις εκπαίδευσης — epochs, learning rate, early stop, dropout
     add_content_slide(prs, "Ρυθμίσεις εκπαίδευσης (κοινές για όλα τα μοντέλα)", [
-        "Optimizer: Adam. Learning rate: 0.001.",
-        "Batch size: 32. Μέγιστα epochs: 100.",
+        "Optimizer: Adam. Learning rate: 0.001. Batch size: 32. Μέγιστα epochs: 100.",
         "Early stopping: διακοπή αν δεν υπάρχει βελτίωση στο test accuracy για 15 συνεχόμενα epochs.",
-        "Loss: Cross-Entropy με class weights [1, 1] (τα δεδομένα είναι ήδη ισορροπημένα με SMOTE).",
-        "Scheduler: ReduceLROnPlateau (factor 0.5, patience 10 epochs).",
+        "Dropout: στα μοντέλα 2 στρωμάτων χρησιμοποιούμε Dropout 0.2 μεταξύ των στρωμάτων.",
+        "Loss: Cross-Entropy με class weights [1, 1]. Scheduler: ReduceLROnPlateau (factor 0.5, patience 10).",
         "Random seed: 42. Όλα τα plots και CSV βρίσκονται στο reports_seq/.",
     ])
 
@@ -366,9 +389,9 @@ def main():
     # 18. Σύνοψη (κείμενο)
     add_content_slide(prs, "Σύνοψη", [
         "Εφαρμόσαμε SMOTE στο αρχικό survey dataset → ισορροπημένα 540 δείγματα (50% YES, 50% NO).",
-        "Εννέα μοντέλα: RNN, GRU, LSTM με hidden=32, 64, 128 (15 features ως ακολουθία).",
+        "18 μοντέλα: RNN, GRU, LSTM × (1 layer + 2 layers με dropout 0.2), hidden=32, 64, 128.",
         "Πλήρης αξιολόγηση: accuracy, precision, recall, F1, ROC-AUC, confusion matrices, καμπύλες ROC/PR.",
-        "Τιμές βαρών (weights): στατιστικά ανά layer και ιστογράμματα στο reports_seq/single_split/ (weights_*.csv, weight_histogram_*.png).",
+        "Τιμές βαρών: weights_*.csv και weight_histogram_*.png στο reports_seq/single_split/.",
         "Single 80/20 split και προαιρετικά 5-fold και 10-fold CV. Όλα τα figures και CSV στο reports_seq/.",
     ])
 

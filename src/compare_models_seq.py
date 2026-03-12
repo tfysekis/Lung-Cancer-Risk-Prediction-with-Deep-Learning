@@ -303,30 +303,51 @@ def compare_sequence_models(
     input_size = X_train.shape[1]
     print(f"   Train: {len(y_train)}, Test: {len(y_test)}, Features: {input_size}")
 
-    # Hidden sizes 32, 64, 128 (teacher asked for 128; 32 and 64 are common defaults)
+    # 1-layer (μονοστρωματικά) + 2-layer with dropout (καθηγητής: δεύτερο στρώμα, dropout)
+    DROPOUT_2L = 0.2
     models_config = [
+        # 1-layer
         {'name': 'RNN (hidden=32)', 'model': LungCancerRNN(input_size=input_size, hidden_size=32, num_layers=1, dropout=0.0),
-         'description': 'Basic RNN'},
+         'description': 'RNN 1 layer'},
         {'name': 'RNN (hidden=64)', 'model': LungCancerRNN(input_size=input_size, hidden_size=64, num_layers=1, dropout=0.0),
-         'description': 'Basic RNN'},
+         'description': 'RNN 1 layer'},
         {'name': 'RNN (hidden=128)', 'model': LungCancerRNN(input_size=input_size, hidden_size=128, num_layers=1, dropout=0.0),
-         'description': 'Basic RNN'},
+         'description': 'RNN 1 layer'},
         {'name': 'GRU (hidden=32)', 'model': LungCancerGRU(input_size=input_size, hidden_size=32, num_layers=1, dropout=0.0),
-         'description': 'GRU'},
+         'description': 'GRU 1 layer'},
         {'name': 'GRU (hidden=64)', 'model': LungCancerGRU(input_size=input_size, hidden_size=64, num_layers=1, dropout=0.0),
-         'description': 'GRU'},
+         'description': 'GRU 1 layer'},
         {'name': 'GRU (hidden=128)', 'model': LungCancerGRU(input_size=input_size, hidden_size=128, num_layers=1, dropout=0.0),
-         'description': 'GRU'},
+         'description': 'GRU 1 layer'},
         {'name': 'LSTM (hidden=32)', 'model': LungCancerLSTM(input_size=input_size, hidden_size=32, num_layers=1, dropout=0.0),
-         'description': 'LSTM'},
+         'description': 'LSTM 1 layer'},
         {'name': 'LSTM (hidden=64)', 'model': LungCancerLSTM(input_size=input_size, hidden_size=64, num_layers=1, dropout=0.0),
-         'description': 'LSTM'},
+         'description': 'LSTM 1 layer'},
         {'name': 'LSTM (hidden=128)', 'model': LungCancerLSTM(input_size=input_size, hidden_size=128, num_layers=1, dropout=0.0),
-         'description': 'LSTM'},
+         'description': 'LSTM 1 layer'},
+        # 2-layer with dropout (καθηγητής: δεύτερο στρώμα, ίδια πλήθη 32/64/128, dropout)
+        {'name': 'RNN 2L (hidden=32)', 'model': LungCancerRNN(input_size=input_size, hidden_size=32, num_layers=2, dropout=DROPOUT_2L),
+         'description': 'RNN 2 layers, dropout 0.2'},
+        {'name': 'RNN 2L (hidden=64)', 'model': LungCancerRNN(input_size=input_size, hidden_size=64, num_layers=2, dropout=DROPOUT_2L),
+         'description': 'RNN 2 layers, dropout 0.2'},
+        {'name': 'RNN 2L (hidden=128)', 'model': LungCancerRNN(input_size=input_size, hidden_size=128, num_layers=2, dropout=DROPOUT_2L),
+         'description': 'RNN 2 layers, dropout 0.2'},
+        {'name': 'GRU 2L (hidden=32)', 'model': LungCancerGRU(input_size=input_size, hidden_size=32, num_layers=2, dropout=DROPOUT_2L),
+         'description': 'GRU 2 layers, dropout 0.2'},
+        {'name': 'GRU 2L (hidden=64)', 'model': LungCancerGRU(input_size=input_size, hidden_size=64, num_layers=2, dropout=DROPOUT_2L),
+         'description': 'GRU 2 layers, dropout 0.2'},
+        {'name': 'GRU 2L (hidden=128)', 'model': LungCancerGRU(input_size=input_size, hidden_size=128, num_layers=2, dropout=DROPOUT_2L),
+         'description': 'GRU 2 layers, dropout 0.2'},
+        {'name': 'LSTM 2L (hidden=32)', 'model': LungCancerLSTM(input_size=input_size, hidden_size=32, num_layers=2, dropout=DROPOUT_2L),
+         'description': 'LSTM 2 layers, dropout 0.2'},
+        {'name': 'LSTM 2L (hidden=64)', 'model': LungCancerLSTM(input_size=input_size, hidden_size=64, num_layers=2, dropout=DROPOUT_2L),
+         'description': 'LSTM 2 layers, dropout 0.2'},
+        {'name': 'LSTM 2L (hidden=128)', 'model': LungCancerLSTM(input_size=input_size, hidden_size=128, num_layers=2, dropout=DROPOUT_2L),
+         'description': 'LSTM 2 layers, dropout 0.2'},
     ]
 
     results = []
-    print(f"\n[2/4] Training {len(models_config)} sequence models (hidden=32, 64, 128)...")
+    print(f"\n[2/4] Training {len(models_config)} sequence models (1-layer + 2-layer with dropout)...")
     for i, config in enumerate(models_config, 1):
         model_name = config['name']
         model = config['model']
@@ -415,6 +436,7 @@ def compare_sequence_models_cv(
     input_size = X.shape[1]
     skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=RANDOM_SEED)
 
+    DROPOUT_2L = 0.2
     models_config = [
         {'name': 'RNN (hidden=32)', 'model_factory': lambda: LungCancerRNN(input_size=input_size, hidden_size=32, num_layers=1, dropout=0.0)},
         {'name': 'RNN (hidden=64)', 'model_factory': lambda: LungCancerRNN(input_size=input_size, hidden_size=64, num_layers=1, dropout=0.0)},
@@ -425,6 +447,15 @@ def compare_sequence_models_cv(
         {'name': 'LSTM (hidden=32)', 'model_factory': lambda: LungCancerLSTM(input_size=input_size, hidden_size=32, num_layers=1, dropout=0.0)},
         {'name': 'LSTM (hidden=64)', 'model_factory': lambda: LungCancerLSTM(input_size=input_size, hidden_size=64, num_layers=1, dropout=0.0)},
         {'name': 'LSTM (hidden=128)', 'model_factory': lambda: LungCancerLSTM(input_size=input_size, hidden_size=128, num_layers=1, dropout=0.0)},
+        {'name': 'RNN 2L (hidden=32)', 'model_factory': lambda: LungCancerRNN(input_size=input_size, hidden_size=32, num_layers=2, dropout=DROPOUT_2L)},
+        {'name': 'RNN 2L (hidden=64)', 'model_factory': lambda: LungCancerRNN(input_size=input_size, hidden_size=64, num_layers=2, dropout=DROPOUT_2L)},
+        {'name': 'RNN 2L (hidden=128)', 'model_factory': lambda: LungCancerRNN(input_size=input_size, hidden_size=128, num_layers=2, dropout=DROPOUT_2L)},
+        {'name': 'GRU 2L (hidden=32)', 'model_factory': lambda: LungCancerGRU(input_size=input_size, hidden_size=32, num_layers=2, dropout=DROPOUT_2L)},
+        {'name': 'GRU 2L (hidden=64)', 'model_factory': lambda: LungCancerGRU(input_size=input_size, hidden_size=64, num_layers=2, dropout=DROPOUT_2L)},
+        {'name': 'GRU 2L (hidden=128)', 'model_factory': lambda: LungCancerGRU(input_size=input_size, hidden_size=128, num_layers=2, dropout=DROPOUT_2L)},
+        {'name': 'LSTM 2L (hidden=32)', 'model_factory': lambda: LungCancerLSTM(input_size=input_size, hidden_size=32, num_layers=2, dropout=DROPOUT_2L)},
+        {'name': 'LSTM 2L (hidden=64)', 'model_factory': lambda: LungCancerLSTM(input_size=input_size, hidden_size=64, num_layers=2, dropout=DROPOUT_2L)},
+        {'name': 'LSTM 2L (hidden=128)', 'model_factory': lambda: LungCancerLSTM(input_size=input_size, hidden_size=128, num_layers=2, dropout=DROPOUT_2L)},
     ]
 
     results = []

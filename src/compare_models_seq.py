@@ -51,6 +51,47 @@ def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
+def save_weight_stats_and_histogram(model, model_name, report_dir):
+    """
+    Save (1) per-layer weight statistics to CSV and (2) weight distribution histogram to PNG.
+    Teacher asked for the values of the weights; these files provide them in a usable form.
+    """
+    safe_name = model_name.replace(' ', '_').replace('(', '').replace(')', '').replace('&', 'and').lower()
+    rows = []
+    all_weights = []
+    for name, param in model.named_parameters():
+        if not param.requires_grad:
+            continue
+        w = param.detach().cpu().numpy()
+        all_weights.append(w.flatten())
+        rows.append({
+            'layer': name,
+            'shape': str(tuple(param.shape)),
+            'num_params': param.numel(),
+            'mean': float(np.mean(w)),
+            'std': float(np.std(w)),
+            'min': float(np.min(w)),
+            'max': float(np.max(w)),
+        })
+    if not rows:
+        return
+    # CSV: per-layer statistics
+    df = pd.DataFrame(rows)
+    csv_path = os.path.join(report_dir, f'weights_{safe_name}.csv')
+    df.to_csv(csv_path, index=False)
+    # Histogram: all weights combined
+    all_flat = np.concatenate(all_weights)
+    plt.figure(figsize=(8, 5))
+    plt.hist(all_flat, bins=80, color='steelblue', edgecolor='black', alpha=0.7)
+    plt.xlabel('Weight value')
+    plt.ylabel('Count')
+    plt.title(f'Weight distribution — {model_name}')
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(os.path.join(report_dir, f'weight_histogram_{safe_name}.png'), dpi=300, bbox_inches='tight')
+    plt.close()
+
+
 def save_model_visualizations(model_name, model, test_loader, result, report_dir, device):
     """Save confusion matrix, ROC, PR curve, and training history for one model."""
     model.eval()
@@ -262,17 +303,30 @@ def compare_sequence_models(
     input_size = X_train.shape[1]
     print(f"   Train: {len(y_train)}, Test: {len(y_test)}, Features: {input_size}")
 
+    # Hidden sizes 32, 64, 128 (teacher asked for 128; 32 and 64 are common defaults)
     models_config = [
+        {'name': 'RNN (hidden=32)', 'model': LungCancerRNN(input_size=input_size, hidden_size=32, num_layers=1, dropout=0.0),
+         'description': 'Basic RNN'},
         {'name': 'RNN (hidden=64)', 'model': LungCancerRNN(input_size=input_size, hidden_size=64, num_layers=1, dropout=0.0),
          'description': 'Basic RNN'},
+        {'name': 'RNN (hidden=128)', 'model': LungCancerRNN(input_size=input_size, hidden_size=128, num_layers=1, dropout=0.0),
+         'description': 'Basic RNN'},
+        {'name': 'GRU (hidden=32)', 'model': LungCancerGRU(input_size=input_size, hidden_size=32, num_layers=1, dropout=0.0),
+         'description': 'GRU'},
         {'name': 'GRU (hidden=64)', 'model': LungCancerGRU(input_size=input_size, hidden_size=64, num_layers=1, dropout=0.0),
          'description': 'GRU'},
+        {'name': 'GRU (hidden=128)', 'model': LungCancerGRU(input_size=input_size, hidden_size=128, num_layers=1, dropout=0.0),
+         'description': 'GRU'},
+        {'name': 'LSTM (hidden=32)', 'model': LungCancerLSTM(input_size=input_size, hidden_size=32, num_layers=1, dropout=0.0),
+         'description': 'LSTM'},
         {'name': 'LSTM (hidden=64)', 'model': LungCancerLSTM(input_size=input_size, hidden_size=64, num_layers=1, dropout=0.0),
+         'description': 'LSTM'},
+        {'name': 'LSTM (hidden=128)', 'model': LungCancerLSTM(input_size=input_size, hidden_size=128, num_layers=1, dropout=0.0),
          'description': 'LSTM'},
     ]
 
     results = []
-    print(f"\n[2/4] Training {len(models_config)} sequence models...")
+    print(f"\n[2/4] Training {len(models_config)} sequence models (hidden=32, 64, 128)...")
     for i, config in enumerate(models_config, 1):
         model_name = config['name']
         model = config['model']
@@ -294,6 +348,7 @@ def compare_sequence_models(
             )
             y_true, y_pred = result['y_true'], result['y_pred']
             viz = save_model_visualizations(model_name, result['model'], test_loader, result, report_dir, device)
+            save_weight_stats_and_histogram(result['model'], model_name, report_dir)
             metrics = {
                 'Model': model_name,
                 'Description': description,
@@ -361,9 +416,15 @@ def compare_sequence_models_cv(
     skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=RANDOM_SEED)
 
     models_config = [
+        {'name': 'RNN (hidden=32)', 'model_factory': lambda: LungCancerRNN(input_size=input_size, hidden_size=32, num_layers=1, dropout=0.0)},
         {'name': 'RNN (hidden=64)', 'model_factory': lambda: LungCancerRNN(input_size=input_size, hidden_size=64, num_layers=1, dropout=0.0)},
+        {'name': 'RNN (hidden=128)', 'model_factory': lambda: LungCancerRNN(input_size=input_size, hidden_size=128, num_layers=1, dropout=0.0)},
+        {'name': 'GRU (hidden=32)', 'model_factory': lambda: LungCancerGRU(input_size=input_size, hidden_size=32, num_layers=1, dropout=0.0)},
         {'name': 'GRU (hidden=64)', 'model_factory': lambda: LungCancerGRU(input_size=input_size, hidden_size=64, num_layers=1, dropout=0.0)},
+        {'name': 'GRU (hidden=128)', 'model_factory': lambda: LungCancerGRU(input_size=input_size, hidden_size=128, num_layers=1, dropout=0.0)},
+        {'name': 'LSTM (hidden=32)', 'model_factory': lambda: LungCancerLSTM(input_size=input_size, hidden_size=32, num_layers=1, dropout=0.0)},
         {'name': 'LSTM (hidden=64)', 'model_factory': lambda: LungCancerLSTM(input_size=input_size, hidden_size=64, num_layers=1, dropout=0.0)},
+        {'name': 'LSTM (hidden=128)', 'model_factory': lambda: LungCancerLSTM(input_size=input_size, hidden_size=128, num_layers=1, dropout=0.0)},
     ]
 
     results = []

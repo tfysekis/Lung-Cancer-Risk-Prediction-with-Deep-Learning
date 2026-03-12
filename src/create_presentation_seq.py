@@ -37,11 +37,17 @@ CV5_SEQ = os.path.join(REPORTS_SEQ, "cv5")
 CV10_SEQ = os.path.join(REPORTS_SEQ, "cv10")
 OUTPUT_PATH = os.path.join(REPORTS_SEQ, "Lung_Cancer_Sequence_Models_Presentation.pptx")
 
-# 3 sequence models: (file_suffix, display_name) — must match compare_models_seq output
+# 9 models: RNN/GRU/LSTM × hidden 32, 64, 128 — must match compare_models_seq output
 MODELS = [
+    ("rnn_hidden=32", "RNN (hidden=32)"),
     ("rnn_hidden=64", "RNN (hidden=64)"),
+    ("rnn_hidden=128", "RNN (hidden=128)"),
+    ("gru_hidden=32", "GRU (hidden=32)"),
     ("gru_hidden=64", "GRU (hidden=64)"),
+    ("gru_hidden=128", "GRU (hidden=128)"),
+    ("lstm_hidden=32", "LSTM (hidden=32)"),
     ("lstm_hidden=64", "LSTM (hidden=64)"),
+    ("lstm_hidden=128", "LSTM (hidden=128)"),
 ]
 
 
@@ -259,13 +265,13 @@ def main():
         "5. Αξιολόγηση: accuracy, precision, recall, F1, ROC-AUC, PR-AUC· confusion matrices και καμπύλες ROC/PR.",
     ])
 
-    # 5. Μοντέλα — RNN, GRU, LSTM (με λεπτομέρειες ανά μοντέλο)
-    add_content_slide(prs, "Μοντέλα — RNN, GRU, LSTM", [
+    # 5. Μοντέλα — RNN, GRU, LSTM (hidden=32, 64, 128)
+    add_content_slide(prs, "Μοντέλα — RNN, GRU, LSTM (hidden=32, 64, 128)", [
         "Τα 15 χαρακτηριστικά αντιμετωπίζονται ως ακολουθία μήκους 15 (input_dim=1).",
-        "RNN (hidden=64): 1 στρώμα RNN, περίπου 4.4K παράμετροι.",
-        "GRU (hidden=64): 1 στρώμα GRU, περίπου 13K παράμετροι.",
-        "LSTM (hidden=64): 1 στρώμα LSTM, περίπου 17K παράμετροι.",
-        "Όλα δίνουν 2 logits (NO/YES)· ίδια loss και αξιολόγηση με το MLP baseline.",
+        "Για κάθε αρχιτεκτονική (RNN, GRU, LSTM) δοκιμάζουμε τρία μεγέθη: hidden=32, 64, 128.",
+        "RNN: 1 στρώμα· παράμετροι ~1.2K (32), ~4.4K (64), ~17K (128).",
+        "GRU: 1 στρώμα· παράμετροι ~3.5K (32), ~13K (64), ~50K (128).",
+        "LSTM: 1 στρώμα· παράμετροι ~4.5K (32), ~17K (64), ~66K (128). Όλα δίνουν 2 logits (NO/YES).",
     ])
 
     # 6. Ρυθμίσεις εκπαίδευσης — epochs, learning rate, early stop κ.ά.
@@ -276,6 +282,22 @@ def main():
         "Loss: Cross-Entropy με class weights [1, 1] (τα δεδομένα είναι ήδη ισορροπημένα με SMOTE).",
         "Scheduler: ReduceLROnPlateau (factor 0.5, patience 10 epochs).",
         "Random seed: 42. Όλα τα plots και CSV βρίσκονται στο reports_seq/.",
+    ])
+
+    # 6b. Πλήθη παραμέτρων (βαρών) ανά μοντέλο — ξεκάθαρα ορατά
+    add_slide_metrics_table(
+        prs,
+        "Πλήθη παραμέτρων (βαρών) ανά μοντέλο",
+        os.path.join(SINGLE_SEQ, "model_comparison_results.csv"),
+        columns_to_show=["Model", "Parameters"],
+    )
+
+    # 6c. Τιμές βαρών (weights) — πού βρίσκονται (CSV + ιστογράμματα)
+    add_content_slide(prs, "Τιμές βαρών (weights) — πού βρίσκονται", [
+        "Για κάθε εκπαιδευμένο μοντέλο αποθηκεύονται:",
+        "(α) Στατιστικά βαρών ανά layer: shape, αριθμός παραμέτρων, mean, std, min, max → reports_seq/single_split/weights_<model>.csv",
+        "(β) Ιστόγραμμα κατανομής των τιμών των βαρών → reports_seq/single_split/weight_histogram_<model>.png",
+        "Τα αρχεία παράγονται αυτόματα μετά την εκπαίδευση (single 80/20 split).",
     ])
 
     # 7. Αξιολόγηση — μετρικές
@@ -344,10 +366,10 @@ def main():
     # 18. Σύνοψη (κείμενο)
     add_content_slide(prs, "Σύνοψη", [
         "Εφαρμόσαμε SMOTE στο αρχικό survey dataset → ισορροπημένα 540 δείγματα (50% YES, 50% NO).",
-        "Τρία μοντέλα ακολουθιών: RNN, GRU, LSTM (15 features ως ακολουθία).",
+        "Εννέα μοντέλα: RNN, GRU, LSTM με hidden=32, 64, 128 (15 features ως ακολουθία).",
         "Πλήρης αξιολόγηση: accuracy, precision, recall, F1, ROC-AUC, confusion matrices, καμπύλες ROC/PR.",
-        "Single 80/20 split και προαιρετικά 5-fold και 10-fold CV για σταθερότερες εκτιμήσεις.",
-        "Όλα τα figures και CSV στο reports_seq/single_split, reports_seq/cv5, reports_seq/cv10.",
+        "Τιμές βαρών (weights): στατιστικά ανά layer και ιστογράμματα στο reports_seq/single_split/ (weights_*.csv, weight_histogram_*.png).",
+        "Single 80/20 split και προαιρετικά 5-fold και 10-fold CV. Όλα τα figures και CSV στο reports_seq/.",
     ])
 
     # 19. Τελική σύνοψη — καλύτερα μοντέλα, αποτελέσματα, overfitting (από τα CSV)

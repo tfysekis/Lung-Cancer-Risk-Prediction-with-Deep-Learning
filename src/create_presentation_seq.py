@@ -152,8 +152,36 @@ def apply_theme(slide, rgb=(0xE8, 0xEE, 0xF5)):
         pass
 
 
-def add_slide_metrics_table(prs, title, csv_path, columns_to_show=None):
-    """Add a slide with a table built from the CSV (e.g. model_comparison_results.csv)."""
+def _add_one_table_slide(prs, title, df_chunk):
+    """Add a single slide with a table from dataframe chunk (includes header row)."""
+    if df_chunk is None or len(df_chunk) == 0:
+        return None
+    layout = prs.slide_layouts[6]
+    slide = prs.slides.add_slide(layout)
+    tx = slide.shapes.add_textbox(Inches(0.5), Inches(0.3), Inches(9), Inches(0.5))
+    tx.text_frame.text = title
+    tx.text_frame.paragraphs[0].font.size = Pt(22)
+    tx.text_frame.paragraphs[0].font.bold = True
+    n_rows, n_cols = len(df_chunk) + 1, len(df_chunk.columns)
+    table = slide.shapes.add_table(n_rows, n_cols, Inches(0.5), Inches(0.9), Inches(9), min(Inches(0.4 * n_rows), Inches(5.5))).table
+    for c, col in enumerate(df_chunk.columns):
+        cell = table.cell(0, c)
+        cell.text = str(col)[:20]
+        cell.text_frame.paragraphs[0].font.size = Pt(BODY_FONT_SIZE)
+    for r in range(len(df_chunk)):
+        for c, col in enumerate(df_chunk.columns):
+            val = df_chunk.iloc[r][col]
+            cell = table.cell(r + 1, c)
+            if isinstance(val, float):
+                cell.text = f"{val:.4f}" if abs(val) < 10 else f"{val:.2f}"
+            else:
+                cell.text = str(val)[:20]
+            cell.text_frame.paragraphs[0].font.size = Pt(BODY_FONT_SIZE)
+    return slide
+
+
+def add_slide_metrics_table(prs, title, csv_path, columns_to_show=None, max_rows_per_slide=10):
+    """Add slide(s) with table from CSV. If rows > max_rows_per_slide, split into multiple slides (1/2, 2/2)."""
     if not os.path.isfile(csv_path):
         return None
     try:
@@ -163,30 +191,18 @@ def add_slide_metrics_table(prs, title, csv_path, columns_to_show=None):
         return None
     if columns_to_show:
         df = df[[c for c in columns_to_show if c in df.columns]]
-    layout = prs.slide_layouts[6]
-    slide = prs.slides.add_slide(layout)
-    tx = slide.shapes.add_textbox(Inches(0.5), Inches(0.3), Inches(9), Inches(0.5))
-    tx.text_frame.text = title
-    tx.text_frame.paragraphs[0].font.size = Pt(22)
-    tx.text_frame.paragraphs[0].font.bold = True
-    n_rows, n_cols = len(df) + 1, len(df.columns)
-    if n_rows < 2 or n_cols < 1:
-        return slide
-    table = slide.shapes.add_table(n_rows, n_cols, Inches(0.5), Inches(0.9), Inches(9), Inches(0.4 * n_rows)).table
-    for c, col in enumerate(df.columns):
-        cell = table.cell(0, c)
-        cell.text = str(col)[:20]
-        cell.text_frame.paragraphs[0].font.size = Pt(BODY_FONT_SIZE)
-    for r in range(len(df)):
-        for c, col in enumerate(df.columns):
-            val = df.iloc[r][col]
-            cell = table.cell(r + 1, c)
-            if isinstance(val, float):
-                cell.text = f"{val:.4f}" if abs(val) < 10 else f"{val:.2f}"
-            else:
-                cell.text = str(val)[:20]
-            cell.text_frame.paragraphs[0].font.size = Pt(BODY_FONT_SIZE)
-    return slide
+    if len(df) == 0:
+        return None
+    if len(df) <= max_rows_per_slide:
+        return _add_one_table_slide(prs, title, df)
+    n_chunks = (len(df) + max_rows_per_slide - 1) // max_rows_per_slide
+    for i in range(n_chunks):
+        start = i * max_rows_per_slide
+        end = min((i + 1) * max_rows_per_slide, len(df))
+        chunk = df.iloc[start:end]
+        part_title = f"{title} ({i + 1}/{n_chunks})"
+        _add_one_table_slide(prs, part_title, chunk)
+    return None
 
 
 def build_summary_bullets():
@@ -307,12 +323,13 @@ def main():
         "Random seed: 42. Όλα τα plots και CSV βρίσκονται στο reports_seq/.",
     ])
 
-    # 6b. Πλήθη παραμέτρων (βαρών) ανά μοντέλο — ξεκάθαρα ορατά
+    # 6b. Πλήθη παραμέτρων (βαρών) ανά μοντέλο — split σε 2 διαφάνειες αν πολλά μοντέλα
     add_slide_metrics_table(
         prs,
         "Πλήθη παραμέτρων (βαρών) ανά μοντέλο",
         os.path.join(SINGLE_SEQ, "model_comparison_results.csv"),
         columns_to_show=["Model", "Parameters"],
+        max_rows_per_slide=9,
     )
 
     # 6c. Τιμές βαρών (weights) — πού βρίσκονται (CSV + ιστογράμματα)
@@ -331,13 +348,14 @@ def main():
         "Αποτελέσματα: single split 80/20 και, όταν έχουν τρέξει, 5-fold και 10-fold stratified CV (μέσος ± τυπική απόκλιση).",
     ])
 
-    # 8. Αποτελέσματα — πίνακας μετρικών (80/20)
+    # 8. Αποτελέσματα — πίνακας μετρικών (80/20) — split σε 2 διαφάνειες
     csv_single = os.path.join(SINGLE_SEQ, "model_comparison_results.csv")
     add_slide_metrics_table(
         prs,
         "Αποτελέσματα — Πίνακας μετρικών (80/20 split πάνω σε δεδομένα SMOTE)",
         csv_single,
         columns_to_show=["Model", "Test Accuracy", "Precision", "Recall", "F1-Score", "ROC-AUC", "Parameters"],
+        max_rows_per_slide=9,
     )
 
     # 9. Αποτελέσματα — γράφημα accuracy (80/20)
@@ -360,7 +378,7 @@ def main():
     # 14. PR curves
     add_slides_per_model_visuals(prs, SINGLE_SEQ, "pr_curve", "Αποτελέσματα — Precision-Recall curve", "Average precision στην υπόμνηση.")
 
-    # 15. 5-fold CV (αν υπάρχει)
+    # 15. 5-fold CV (αν υπάρχει) — πίνακας split σε 2 διαφάνειες
     acc_cv5 = os.path.join(CV5_SEQ, "accuracy_comparison.png")
     if os.path.isfile(acc_cv5):
         add_slide_with_image(prs, "Αποτελέσματα — 5-fold cross-validation (μέσος ± τυπική απόκλιση)", acc_cv5, "Δεδομένα SMOTE, 5-fold stratified CV.")
@@ -369,9 +387,10 @@ def main():
             "Αποτελέσματα — Μετρικές 5-fold CV",
             os.path.join(CV5_SEQ, "model_comparison_results_seq_cv.csv"),
             columns_to_show=["Model", "Test Accuracy (mean)", "Test Accuracy (std)", "ROC-AUC (mean)", "ROC-AUC (std)"],
+            max_rows_per_slide=9,
         )
 
-    # 16. 10-fold CV (αν υπάρχει)
+    # 16. 10-fold CV (αν υπάρχει) — πίνακας split σε 2 διαφάνειες
     acc_cv10 = os.path.join(CV10_SEQ, "accuracy_comparison.png")
     if os.path.isfile(acc_cv10):
         add_slide_with_image(prs, "Αποτελέσματα — 10-fold cross-validation (μέσος ± τυπική απόκλιση)", acc_cv10, "Δεδομένα SMOTE, 10-fold stratified CV.")
@@ -380,6 +399,7 @@ def main():
             "Αποτελέσματα — Μετρικές 10-fold CV",
             os.path.join(CV10_SEQ, "model_comparison_results_seq_cv.csv"),
             columns_to_show=["Model", "Test Accuracy (mean)", "Test Accuracy (std)", "ROC-AUC (mean)", "ROC-AUC (std)"],
+            max_rows_per_slide=9,
         )
 
     # 17. 5-fold vs 10-fold δίπλα-δίπλα (αν υπάρχουν και τα δύο)
